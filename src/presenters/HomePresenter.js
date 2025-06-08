@@ -1,39 +1,28 @@
+// src/scripts/presenters/HomePresenter.js
 import StoryApi from '../models/StoryApi.js';
-import L from 'leaflet';
+import HomeView from '../views/HomeView.js'; // Import HomeView yang sudah direfaktor
 
 const HomePresenter = {
-  async init() {
-    const container = document.getElementById('story-list');
+  _view: null, // Properti untuk menyimpan instance HomeView
+
+  async init(viewInstance) {
+    this._view = viewInstance; // Menerima instance View dari router
+
+    // Langkah 1: Inisialisasi elemen View
+    this._view.initViewElements();
+
+    // Langkah 2: Ambil data cerita dari Model (StoryApi)
     try {
       const stories = await StoryApi.getStories();
+      this._view.renderStories(stories); // Meminta View untuk merender daftar cerita
 
-      container.innerHTML = stories.map((story) => `
-        <article class="story-card">
-          <img src="${story.photoUrl}" alt="Foto oleh ${story.name}" />
-          <h2>${story.name}</h2>
-          <p>${story.description}</p>
-          <time>${new Date(story.createdAt).toLocaleString()}</time>
-        </article>
-      `).join('');
-
-      // Peta
-      const map = L.map('map-view').setView([0, 0], 2);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
-      }).addTo(map);
-
-      stories.forEach((story) => {
-        if (story.lat && story.lon) {
-          L.marker([story.lat, story.lon])
-            .addTo(map)
-            .bindPopup(`<strong>${story.name}</strong><br>${story.description}`);
-        }
-      });
-
+      // Langkah 3: Inisialisasi peta dan minta View untuk merender marker
+      this._view.initStoryMap(0, 0, 2); // Atur tampilan awal peta (misalnya, pusat dunia)
+      this._view.renderStoryMarkers(stories); // Meminta View untuk merender marker pada peta
     } catch (err) {
-      container.innerHTML = `<p style="color:red">Gagal memuat story: ${err.message}</p>`;
+      this._view.displayStoryLoadError(err.message); // Meminta View untuk menampilkan pesan error
     }
-  }
+  },
 };
 
 export default HomePresenter;

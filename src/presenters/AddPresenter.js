@@ -1,123 +1,83 @@
+// src/scripts/presenters/AddPresenter.js
 import StoryApi from '../models/StoryApi.js';
-import L from 'leaflet';
+import AddView from '../views/AddView.js'; // Import AddView yang sudah direfaktor
 
 const AddPresenter = {
-  init() {
-    // Inisialisasi Peta
-    const map = L.map('map').setView([-6.2, 106.8], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(map);
+  _view: null, // Properti untuk menyimpan instance AddView
+  _currentMediaStream: null, // Untuk menyimpan referensi stream kamera agar bisa dihentikan
 
-    let marker;
-    map.on('click', (e) => {
-      const { lat, lng } = e.latlng;
-      document.getElementById('lat').value = lat;
-      document.getElementById('lon').value = lng;
+  async init(viewInstance) {
+    this._view = viewInstance; // Menerima instance View dari router
 
-      if (marker) marker.remove();
-      marker = L.marker([lat, lng]).addTo(map)
-        .bindPopup(`Lokasi dipilih: ${lat.toFixed(5)}, ${lng.toFixed(5)}`)
-        .openPopup();
+    // Langkah 1: Inisialisasi elemen View dan event listener di View
+    this._view.initViewElements();
+
+    // Langkah 2: Atur listener untuk klik peta melalui View
+    this._view.setMapClickListener((lat, lng) => {
+      this._view.setLatLonInput(lat, lng);
+      this._view.renderMarker(lat, lng, `Lokasi dipilih: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
     });
 
-    // Inisialisasi Kamera & Preview
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const captureBtn = document.getElementById('capture-btn');
-    const retakeBtn = document.getElementById('retake-btn');
-    const previewImg = document.getElementById('preview');
-    const photoDataInput = document.getElementById('photo-data');
+    // Langkah 3: Inisialisasi kamera melalui View
+    try {
+      this._currentMediaStream = await this._view.initCameraStream(); // View akan mengembalikan stream
+    } catch (err) {
+      this._view.displayMessage('Tidak dapat mengakses kamera: ' + err.message);
+    }
 
-    let mediaStream;
-
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-      .then((stream) => {
-        mediaStream = stream;
-        video.srcObject = stream;
-      })
-      .catch((err) => {
-        alert('Tidak dapat mengakses kamera: ' + err.message);
-      });
-
-    captureBtn.addEventListener('click', () => {
-      const context = canvas.getContext('2d');
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      const dataUrl = canvas.toDataURL('image/png');
-      photoDataInput.value = dataUrl;
-      previewImg.src = dataUrl;
-
-      // Tampilkan preview
-      canvas.style.display = 'none';
-      previewImg.style.display = 'block';
-      video.style.display = 'none';
-      captureBtn.style.display = 'none';
-      retakeBtn.style.display = 'inline';
+    // Langkah 4: Atur listener untuk tombol 'Ambil Foto' dan 'Ulangi Foto' melalui View
+    this._view.setCaptureButtonHandler((dataUrl) => {
+      this._view.displayPhotoPreview(dataUrl);
+    });
+    this._view.setRetakeButtonHandler(() => {
+      this._view.resetPhotoPreview();
     });
 
-    retakeBtn.addEventListener('click', () => {
-      // Reset preview
-      previewImg.style.display = 'none';
-      previewImg.src = '';
-      photoDataInput.value = '';
-
-      video.style.display = 'block';
-      captureBtn.style.display = 'inline';
-      retakeBtn.style.display = 'none';
-    });
-
-    // Submit Form
-    const form = document.getElementById('story-form');
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const description = document.getElementById('description').value;
-      const photoData = document.getElementById('photo-data').value;
-      const lat = document.getElementById('lat').value;
-      const lon = document.getElementById('lon').value;
-
-      if (!photoData) {
-        alert('Silakan ambil foto terlebih dahulu.');
+    // Langkah 5: Atur listener untuk submit form melalui View
+    this._view.setFormSubmitHandler(async (formData) => {
+      if (!formData.photoData) {
+        this._view.displayMessage('Silakan ambil foto terlebih dahulu.');
         return;
       }
 
-      const blob = dataURLtoBlob(photoData);
-      const formData = new FormData();
-      formData.append('description', description);
-      formData.append('photo', blob, 'photo.png');
-      if (lat && lon) {
-        formData.append('lat', lat);
-        formData.append('lon', lon);
+      // Konversi data URL ke Blob (fungsi helper ini bisa di util/models)
+      const blob = this._dataURLtoBlob(formData.photoData);
+      const dataToSend = new FormData();
+      dataToSend.append('description', formData.description);
+      dataToSend.append('photo', blob, 'photo.png');
+      if (formData.lat && formData.lon) {
+        dataToSend.append('lat', formData.lat);
+        dataToSend.append('lon', formData.lon);
       }
 
       try {
-        await StoryApi.addStory(formData);
-        alert('Cerita berhasil ditambahkan!');
-        window.location.hash = '#/home';
+        await StoryApi.addStory(dataToSend);
+        this._view.displayMessage('Cerita berhasil ditambahkan!');
+        window.location.hash = '#/home'; // Navigasi bisa tetap di sini atau di router
       } catch (error) {
-        alert('Gagal menambahkan cerita: ' + error.message);
+        this._view.displayMessage('Gagal menambahkan cerita: ' + error.message);
       }
     });
 
-    // Hentikan kamera saat keluar dari halaman (opsional)
+    // Menghentikan kamera saat meninggalkan halaman (idealnya diatur oleh router)
     window.addEventListener('hashchange', () => {
-      if (mediaStream) {
-        mediaStream.getTracks().forEach(track => track.stop());
+      // Hanya hentikan stream jika halaman saat ini BUKAN lagi halaman tambah
+      if (window.location.hash !== '#/add' && this._currentMediaStream) {
+        this._view.stopCameraStream(); // Meminta View untuk menghentikan stream
       }
     });
-  }
-};
+  },
 
-// Konversi base64 ke Blob
-function dataURLtoBlob(dataurl) {
-  const arr = dataurl.split(',');
-  const mime = arr[0].match(/:(.*?);/)[1];
-  const bstr = atob(arr[1]);
-  let n = bstr.length;
-  const u8arr = new Uint8Array(n);
-  while (n--) u8arr[n] = bstr.charCodeAt(n);
-  return new Blob([u8arr], { type: mime });
-}
+  // Fungsi helper untuk konversi DataURL ke Blob (bisa dipindahkan ke utilities)
+  _dataURLtoBlob(dataurl) {
+    const arr = dataurl.split(',');
+    const mime = arr[0].match(/:(.*?);/)[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) u8arr[n] = bstr.charCodeAt(n);
+    return new Blob([u8arr], { type: mime });
+  },
+};
 
 export default AddPresenter;

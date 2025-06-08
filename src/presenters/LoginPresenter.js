@@ -1,26 +1,28 @@
+// src/scripts/presenters/LoginPresenter.js
 import StoryApi from '../models/StoryApi.js';
+import LoginView from '../views/LoginView.js'; // Import LoginView yang sudah direfaktor
 
 const LoginPresenter = {
-  init() {
-    const form = document.getElementById('login-form');
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
+  _view: null, // Properti untuk menyimpan instance LoginView
 
-      const email = document.getElementById('email').value;
-      const password = document.getElementById('password').value;
+  init(viewInstance) {
+    this._view = viewInstance; // Menerima instance View dari router
 
+    // Langkah 1: Inisialisasi elemen View
+    this._view.initViewElements();
+
+    // Langkah 2: Atur listener untuk submit form melalui View
+    this._view.setLoginSubmitHandler(async (formData) => {
       try {
-        const result = await StoryApi.login({ email, password });
+        const result = await StoryApi.login({ email: formData.email, password: formData.password });
         StoryApi.saveToken(result.token);
-        alert('Login berhasil!');
-        window.location.hash = '#/home'; // route home
-
-        // ini akan trigger listener di main.js untuk update UI jika perlu
+        this._view.displayMessage('Login berhasil!');
+        window.location.hash = '#/home'; // Navigasi bisa tetap di sini atau di router
       } catch (error) {
-        alert('Login gagal: ' + error.message);
+        this._view.displayMessage('Login gagal: ' + error.message);
       }
     });
-  }
+  },
 };
 
 export default LoginPresenter;
